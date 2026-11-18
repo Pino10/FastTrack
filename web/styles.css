@@ -244,3 +244,4 @@ input[type=time].in,input[type=datetime-local].in{min-width:0;-webkit-appearance
 @media(max-width:360px){.qa4 span{font-size:11px}.tiles4 b{font-size:17px}}
 .rgs>svg{position:absolute;width:0;height:0}.rgs{position:relative}
 .sr>i.sw{width:50px;height:30px;border-radius:15px;background:var(--line2);display:block}.sr>i.sw.on{background:var(--ok)}
+
