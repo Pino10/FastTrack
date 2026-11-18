@@ -33,3 +33,8 @@ Food data: [Open Food Facts](https://world.openfoodfacts.org), ODbL.
 
 ## Licence
 MIT.
+
+
+## v1.1
+
+Light, dark and auto themes with accent colours, a 24 hour day rhythm bar, live body stage meters, favourites and copy yesterday in Eat, a Progress area with overview, calendar history, body trends and awards, a Learn library, plan comparison and pause, end early reasons, personal records, challenges and levels, earlier version snapshots, optional auto-save to a file on desktop Chrome and Edge, and one tap updates.

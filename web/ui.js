@@ -299,7 +299,7 @@ function openProfile(){const p=S.prof;let d=JSON.parse(JSON.stringify({units:p.u
 async function doBackup(){const ok=await shareFile(`FastTrack-backup-${dkey()}.json`,exportJSON(),'application/json');if(ok){S.set.lastBackup=Date.now();S.set.bkN++;save();render();toast('Backup saved')}}
 function doRestore(){const i=document.createElement('input');i.type='file';i.accept='.json,application/json';i.onchange=async()=>{const f=i.files[0];if(!f)return;if(f.size>30e6){toast('That file is too large');return}try{const t=await f.text();JSON.parse(t);sheet(`${SX}<h2>Replace your data?</h2><p class="sub">This replaces everything on this device with the backup. Back up first if you are unsure.</p><button class="btn big" id="rg2">Restore</button><button class="btn ghost" data-a="close">Cancel</button><div style="height:20px"></div>`,sh=>{$('#rg2',sh).onclick=()=>{try{restoreText(t);closeSheet();TAB='today';render();toast('Backup restored')}catch(e){toast(e.message||'Restore failed')}}})}catch(e){toast('That file is not a FastTrack backup.')}};i.click()}
 function wipe(){sheet(`${SX}<h2>Erase everything?</h2><p class="sub">This removes all data from this device and cannot be undone. Back up first if you want to keep it.</p><button class="btn big stop" id="wp">Erase everything</button><button class="btn ghost" data-a="close">Cancel</button><div style="height:20px"></div>`,sh=>{$('#wp',sh).onclick=()=>{try{localStorage.removeItem(KEY)}catch(e){}S=defState();closeSheet();ONB=null;render()}})}
-function applyTheme(){const t=S.set.theme;document.documentElement.dataset.theme=t==='auto'?'':t;const dark=t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches);document.querySelectorAll('meta[name=theme-color]').forEach(m=>m.remove());const m=document.createElement('meta');m.name='theme-color';m.content=dark?'#0d0e13':'#f7f2ea';document.head.appendChild(m)}
+function applyTheme(){const t=S.set.theme;document.documentElement.dataset.theme=t==='auto'?'':t;document.documentElement.dataset.accent=S.set.accent&&S.set.accent!=='ember'?S.set.accent:'';const dark=t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches);document.querySelectorAll('meta[name=theme-color]').forEach(m=>m.remove());const m=document.createElement('meta');m.name='theme-color';m.content=dark?'#0d0e13':'#f7f2ea';document.head.appendChild(m)}
 let UPD=false;async function chkUpdate(manual){try{const r=await fetch('version.json?'+Date.now(),{cache:'no-store'});const j=await r.json();if(j.v&&j.v!==VER){if(manual||!sessionStorage.getItem('ftu'+j.v)){sessionStorage.setItem('ftu'+j.v,'1');await hardRefresh()}}else if(manual)toast('You are on the latest version')}catch(e){if(manual)toast('Could not check right now')}}
 async function hardRefresh(){try{const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)));const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()))}catch(e){}location.reload()}
 
@@ -335,11 +335,3 @@ function act(a,el){const v=el.dataset.v;switch(a){
  case'oother':openPlans();break}}
 document.addEventListener('click',e=>{const el=e.target.closest('[data-a]');if(el)act(el.dataset.a,el)});
 document.addEventListener('change',e=>{if(e.target.id==='eatT'){const v=e.target.value;if(/^\d\d:\d\d$/.test(v)){S.plan.eat=v;save();render()}}});
-/* ---------- start ---------- */
-applyTheme();matchMedia('(prefers-color-scheme: dark)').addEventListener&&matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
-const qs=new URLSearchParams(location.search);if(['today','plan','eat','progress','me'].includes(qs.get('tab')))TAB=qs.get('tab');
-if(S.prof.done&&!S.plan.ov)S.plan.ov={};
-render();
-if(qs.get('add')==='meal'&&S.prof.done)setTimeout(openFood,300);
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});setTimeout(()=>chkUpdate(false),2500)}
-window.__ft={S:()=>S,render,phase,dayInfo,planId,recommend,calc,startFast,endFast,restoreText,norm,streak,openFood,offItem,suggestEat,setTab:t=>{TAB=t;render()},FOODDAY:()=>FOODDAY};

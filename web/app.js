@@ -1,6 +1,6 @@
 'use strict';
 /* FastTrack engine: state, plans, schedule, calculations, backup */
-const VER='1.0',KEY='fasttrack.v1',H1=36e5,D1=864e5;
+const VER='1.1',KEY='fasttrack.v1',H1=36e5,D1=864e5;
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
@@ -11,8 +11,8 @@ const addDays=(k,n)=>{const d=dparse(k);d.setDate(d.getDate()+n);return dkey(d)}
 const hmMin=s=>{const[h,m]=String(s||'12:00').split(':').map(Number);return(h||0)*60+(m||0)};
 const minHM=m=>{m=((Math.round(m)%1440)+1440)%1440;return`${pad(Math.floor(m/60))}:${pad(m%60)}`};
 const atTime=(k,hm)=>{const d=dparse(k);d.setMinutes(hmMin(hm));return d.getTime()};
-const fT=ts=>new Date(ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-const fTs=ts=>{const d=new Date(ts);return d.getMinutes()===0?d.toLocaleTimeString([],{hour:'numeric'}):fT(ts)};
+const fT=ts=>new Date(ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit',hour12:(typeof S!=='undefined'&&S&&S.set&&S.set.h24)?false:undefined});
+const fTs=ts=>{const d=new Date(ts);return d.getMinutes()===0&&!(S.set&&S.set.h24)?d.toLocaleTimeString([],{hour:'numeric'}):fT(ts)};
 const fD=ts=>new Date(ts).toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
 const fDL=ts=>new Date(ts).toLocaleDateString([],{day:'numeric',month:'short',year:'numeric'});
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -21,7 +21,7 @@ const clock=ms=>{const s=Math.max(0,Math.floor(ms/1000));return`${pad(Math.floor
 const r1=n=>Math.round(n*10)/10;
 
 /* ---------- sanitiser (applies to loaded and restored data) ---------- */
-const SAFEK=new Set(['id','p','sex','goal','exp','mode','theme','base','target','src','a','u']);
+const SAFEK=new Set(['id','p','sex','goal','exp','mode','theme','base','target','src','a','u','accent','r','mt']);
 function clean(v,key,d){if(d>8)return null;
  if(typeof v==='string'){v=v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u2028\u2029]/g,'').slice(0,400);if(SAFEK.has(key)&&!/^[#\w.\-:]{0,40}$/.test(v))return'';return v}
  if(typeof v==='number')return Number.isFinite(v)?v:0;if(typeof v==='boolean'||v===null)return v;
@@ -29,20 +29,23 @@ function clean(v,key,d){if(d>8)return null;
  if(typeof v==='object'){const o={};for(const k of Object.keys(v)){if(k==='__proto__'||k==='constructor'||k==='prototype'||k.length>60)continue;o[k]=clean(v[k],k,d+1)}return o}
  return null}
 function defState(){return{v:1,prof:{done:false,units:{w:'kg',h:'cm'},sex:'x',age:30,hcm:170,wkg:70,gw:0,act:1.375,goal:'health',exp:'new',wake:'07:00',sleep:'23:00',flags:[],name:''},
- plan:{mode:'single',base:'16-8',eat:'12:00',ramp:[],rampStart:dkey(),target:'16-8',r52:[1,4],longDays:[2],adfStart:dkey(),cf:16,ov:{},week:{}},
- tgt:{kcal:2000,p:90,water:2400,bmr:1500,tdee:2000},fasts:[],meals:[],water:{},weights:[],checks:{},set:{theme:'auto',lastBackup:0,bkN:0}}}
+ plan:{mode:'single',base:'16-8',eat:'12:00',ramp:[],rampStart:dkey(),target:'16-8',r52:[1,4],longDays:[2],adfStart:dkey(),cf:16,ov:{},week:{},pause:null},
+ tgt:{kcal:2000,p:90,water:2400,bmr:1500,tdee:2000},fasts:[],meals:[],favs:[],water:{},weights:[],checks:{},set:{theme:'auto',accent:'ember',h24:false,hap:true,bottle:250,carb:40,fat:30,ms:true,workout:'',lastBackup:0,bkN:0}}}
 function merge(a,b){for(const k of Object.keys(b)){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])&&a[k]&&typeof a[k]==='object'&&!Array.isArray(a[k]))merge(a[k],b[k]);else a[k]=b[k]}return a}
 function norm(raw){const j=clean(raw,'',0);if(!j||typeof j!=='object')throw new Error('bad');const s=merge(defState(),j);
- ['fasts','meals','weights'].forEach(k=>{if(!Array.isArray(s[k]))s[k]=[]});
+ ['fasts','meals','weights','favs'].forEach(k=>{if(!Array.isArray(s[k]))s[k]=[]});
+ s.favs=s.favs.filter(m=>m&&m.n).slice(0,200).map(m=>({id:m.id||uid(),n:String(m.n).slice(0,120),k:Math.max(0,+m.k||0),p:Math.max(0,+m.p||0),c:Math.max(0,+m.c||0),f:Math.max(0,+m.f||0)}));
+ if(!['ember','ocean','forest','violet'].includes(s.set.accent))s.set.accent='ember';s.set.carb=Math.min(70,Math.max(10,+s.set.carb||40));s.set.fat=Math.min(60,Math.max(10,+s.set.fat||30));s.set.bottle=Math.min(2000,Math.max(100,+s.set.bottle||250));
+ if(s.plan.pause&&!(s.plan.pause.f&&s.plan.pause.t))s.plan.pause=null;
  ['water','checks'].forEach(k=>{if(!s[k]||typeof s[k]!=='object'||Array.isArray(s[k]))s[k]={}});
- s.fasts=s.fasts.filter(f=>f&&typeof f.s==='number'&&f.s>0).map(f=>({id:f.id||uid(),s:f.s,e:f.e&&f.e>f.s?f.e:null,g:Math.min(72,Math.max(1,+f.g||16)),p:f.p||'',n:String(f.n||'').slice(0,200)}));
+ s.fasts=s.fasts.filter(f=>f&&typeof f.s==='number'&&f.s>0).map(f=>({id:f.id||uid(),s:f.s,e:f.e&&f.e>f.s?f.e:null,g:Math.min(72,Math.max(1,+f.g||16)),p:f.p||'',n:String(f.n||'').slice(0,200),r:String(f.r||'').slice(0,20)}));
  s.meals=s.meals.filter(m=>m&&typeof m.t==='number').map(m=>({id:m.id||uid(),t:m.t,n:String(m.n||'Meal').slice(0,120),k:Math.max(0,+m.k||0),p:Math.max(0,+m.p||0),c:Math.max(0,+m.c||0),f:Math.max(0,+m.f||0),mt:m.mt||'s',src:m.src||''}));
  s.weights=s.weights.filter(w=>w&&w.kg>20&&w.kg<400).map(w=>({id:w.id||uid(),t:w.t||Date.now(),kg:+w.kg,wc:+w.wc||0}));
  const ap=s.plan.base;if(!PL[ap])s.plan.base='16-8';if(!['single','week','ramp'].includes(s.plan.mode))s.plan.mode='single';
  return s}
 let S;try{S=norm(JSON.parse(localStorage.getItem(KEY)))}catch(e){S=defState()}
 let LASTSAVE=0,TMR=0;
-function save(){clearTimeout(TMR);TMR=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(S));LASTSAVE=Date.now()}catch(e){toast('Could not save. Storage may be full.')}},120)}
+function save(){clearTimeout(TMR);TMR=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(S));LASTSAVE=Date.now();takeSnap();if(typeof afKick==='function')afKick()}catch(e){toast('Could not save. Storage may be full.')}},120)}
 window.addEventListener('pagehide',()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}});
 
 /* ---------- units and body maths ---------- */
@@ -83,7 +86,7 @@ function suggestEat(id,wake=S.prof.wake,sleep=S.prof.sleep){const P=PL[id]||PL['
  return minHM(Math.round(start/30)*30)}
 
 /* ---------- schedule ---------- */
-function planId(k){const P=S.plan,o=P.ov[k];if(o&&(PL[o]||o==='free'))return o;
+function planId(k){const P=S.plan,o=P.ov[k];if(P.pause&&k>=P.pause.f&&k<=P.pause.t)return'free';if(o&&(PL[o]||o==='free'))return o;
  const dow=dparse(k).getDay();
  if(P.mode==='week'){const w=P.week[dow];return w&&(PL[w]||w==='free')?w:'free'}
  if(P.mode==='ramp'&&P.ramp.length){const days=Math.floor((dparse(k)-dparse(P.rampStart))/D1);const i=Math.max(0,Math.min(P.ramp.length-1,Math.floor(days/7)));return P.ramp[i]}
@@ -165,3 +168,41 @@ function icsText(days=14){const out=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//
 async function shareFile(name,text,type){const f=new File([text],name,{type});
  try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});return true}}catch(e){if(e&&e.name==='AbortError')return false}
  const u=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return true}
+
+/* ---------- v1.1 engine: snapshots, estimates, insights ---------- */
+const SNAPK='fasttrack.snaps';
+function snaps(){try{return JSON.parse(localStorage.getItem(SNAPK)||'[]')}catch(e){return[]}}
+function takeSnap(force){try{if(!S.prof.done)return;const L=snaps(),last=L[L.length-1];if(!force&&last&&Date.now()-last.t<3*H1)return;L.push({t:Date.now(),n:S.fasts.length,m:S.meals.length,d:JSON.stringify(S)});while(L.length>4)L.shift();localStorage.setItem(SNAPK,JSON.stringify(L))}catch(e){try{const L=snaps();L.shift();localStorage.setItem(SNAPK,JSON.stringify(L))}catch(x){}}}
+function restoreSnap(i){const L=snaps();if(!L[i])throw new Error('Snapshot not found');S=norm(JSON.parse(L[i].d));recalc();save()}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+const fuel=h=>{const gly=Math.max(0,1-Math.pow(h/26,1.15)),ket=Math.min(1,Math.max(0,(h-10)/38)),fat=Math.min(.92,.38+h/38);return{gly,ket,fat}};
+const burned=h=>{const rest=S.tgt.bmr/24*h;return{k:Math.round(rest),fat:Math.round(rest*Math.min(.9,.4+h/40))}};
+function adherence(days=30){let n=0,ok=0;const ok2=new Set(doneFasts().filter(fastOk).map(fastDay));const t=dkey();for(let i=1;i<=days;i++){const k=addDays(t,-i);if(k<(S.fasts[0]?dkey(sortedFasts()[0].s):t))break;if(dayInfo(k).fastH){n++;if(ok2.has(k))ok++}}return{n,ok,pct:n?Math.round(ok/n*100):0}}
+function suggestion(){if(S.plan.mode!=='single')return null;const a=adherence(14),id=S.plan.base,P=PL[id];if(!P||P.kind!=='window'||a.n<6)return null;const i=LADDER.indexOf(id),risky=recommend().risky;
+ if(a.pct>=85&&i>=0&&LADDER[i+1]&&!risky&&PL[LADDER[i+1]].lvl<=3)return{up:1,id:LADDER[i+1],t:`You hit ${a.ok} of your last ${a.n} fasts. Ready to try ${PL[LADDER[i+1]].name}?`};
+ if(a.pct<50&&i>0)return{up:0,id:LADDER[i-1],t:`You completed ${a.ok} of ${a.n} recent fasts. A gentler ${PL[LADDER[i-1]].name} may be easier to keep.`};return null}
+function records(){const d=doneFasts(),hs=d.map(fh);const wk={};d.forEach(f=>{const dt=dparse(fastDay(f)),mon=addDays(fastDay(f),-((dt.getDay()+6)%7));wk[mon]=(wk[mon]||0)+fh(f)});
+ return{longest:hs.length?Math.max(...hs):0,bestWeek:Object.values(wk).length?Math.max(...Object.values(wk)):0,bestStreak:streak().best,total:hs.reduce((a,b)=>a+b,0),n:d.length,first:d.length?d[0].s:null}}
+function monthStat(y,m){const d=doneFasts().filter(f=>{const x=new Date(f.e);return x.getFullYear()===y&&x.getMonth()===m});return{n:d.length,h:d.reduce((a,f)=>a+fh(f),0),ok:d.filter(fastOk).length,avg:d.length?d.reduce((a,f)=>a+fh(f),0)/d.length:0}}
+function xpInfo(){const st=stats(),dm=new Set(S.meals.map(m=>dkey(m.t))).size,wd=Object.values(S.water).filter(v=>v>=S.tgt.water).length;
+ const xp=Math.round(st.tot*3+st.ok*25+S.weights.length*5+dm*4+wd*3+Object.keys(S.checks).length*2);let li=0;LEVELS.forEach((l,i)=>{if(xp>=l[0])li=i});const nx=LEVELS[li+1];
+ return{xp,lvl:li+1,name:LEVELS[li][1],base:LEVELS[li][0],next:nx?nx[0]:null,frac:nx?(xp-LEVELS[li][0])/(nx[0]-LEVELS[li][0]):1}}
+function challenges(){const t=dkey(),mon=addDays(t,-((dparse(t).getDay()+6)%7)),days=[];for(let i=0;i<7;i++)days.push(addDays(mon,i));
+ const f14=doneFasts().filter(f=>days.includes(fastDay(f))&&fh(f)>=14).length;
+ const pd=days.filter(k=>k<=t&&sumM(mealsOn(k)).p>=S.tgt.p*.9).length;const wd=days.filter(k=>k<=t&&waterOn(k)>=S.tgt.water).length;
+ return[{id:'c1',t:'Three fasts of 14 hours or more',v:f14,m:3,ic:'flame'},{id:'c2',t:'Hit your protein on four days',v:pd,m:4,ic:'fork'},{id:'c3',t:'Reach your water goal five days',v:wd,m:5,ic:'drop'}]}
+function bestDay(){const a=[[],[],[],[],[],[],[]];doneFasts().forEach(f=>a[new Date(f.e).getDay()].push(fh(f)));let best=null;a.forEach((l,i)=>{if(l.length>=2){const v=l.reduce((x,y)=>x+y,0)/l.length;if(!best||v>best.v)best={d:i,v,n:l.length}}});return best}
+function weightFit(days=28){const w=weightTrend().filter(x=>x.t>Date.now()-days*D1);if(w.length<3)return null;const t0=w[0].t,xs=w.map(x=>(x.t-t0)/D1),ys=w.map(x=>x.kg),n=xs.length,mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;let num=0,den=0;for(let i=0;i<n;i++){num+=(xs[i]-mx)*(ys[i]-my);den+=(xs[i]-mx)**2}if(!den)return null;const sl=num/den;return{perWeek:sl*7,now:my+sl*((Date.now()-t0)/D1-mx)}}
+function projection(){const f=weightFit(),gw=S.prof.gw;if(!f||!gw||!(gw>0))return null;const cur=f.now;if((gw<cur&&f.perWeek>=-.02)||(gw>cur&&f.perWeek<=.02))return{stalled:true,cur};const days=(gw-cur)/(f.perWeek/7);if(days<0||days>900)return{stalled:true,cur};return{date:Date.now()+days*D1,days:Math.round(days),cur,rate:f.perWeek}}
+function compliance(k){const w=winOf(k),ml=mealsOn(k);if(!w||!ml.length)return null;const inn=ml.filter(m=>m.t>=w.s-6e4&&m.t<=w.e+6e4).length;return Math.round(inn/ml.length*100)}
+function dailyInsight(){const a=activeFast(),ph=phase(),st=streak(),ad=adherence(14);const now=Date.now();
+ if(a){const h=(now-a.s)/H1;if(h>=a.g)return{ic:'check',t:'Goal reached',b:'You are past your goal. End the fast whenever you are ready, there is no extra credit for going longer.'};if(h>=12)return{ic:'flame',t:'Fat burning is ramping up',b:'Past 12 hours your body leans more on fat for fuel. Keep water and a pinch of salt handy.'};if(h>=4)return{ic:'drop',t:'Stay topped up',b:'Hunger comes in waves. Drink some water and it usually passes in about 20 minutes.'};return{ic:'moon',t:'Just getting started',b:'The first hours are the easiest. Digestion is still working through your last meal.'}}
+ if(ph.k==='eat'){const t=sumM(mealsOn(dkey()));const left=Math.max(0,S.tgt.p-t.p);if(left>20)return{ic:'fork',t:`${Math.round(left)} g protein to go`,b:'Put protein in your next meal. Eggs, fish, chicken, yoghurt or beans all help.'}}
+ if(st.cur>=3)return{ic:'trophy',t:`${st.cur} days in a row`,b:'Consistency beats intensity. Keep the routine simple.'};
+ if(ad.n>=6&&ad.pct>=80)return{ic:'star',t:`${ad.pct}% of recent fasts completed`,b:'You are in a great rhythm. Check the Plan tab to see if you want to step up.'};
+ const w=weightFit();if(w&&w.perWeek<-.1)return{ic:'scale',t:'Trending down',b:`Your weekly average is moving about ${Math.abs(r1(wDisp(w.perWeek)))} ${wUnit()} a week.`};
+ return{ic:'leaf',t:'Tip of the day',b:TIPS_FAST[Math.floor(now/D1)%TIPS_FAST.length]}}
+function weekReport(){const t=dkey(),days=[];for(let i=6;i>=0;i--)days.push(addDays(t,-i));const fs=doneFasts().filter(f=>days.includes(fastDay(f)));const hrs=fs.reduce((a,f)=>a+fh(f),0);
+ const kc=days.map(k=>sumM(mealsOn(k)).k).filter(x=>x>0);const ws=weightTrend().filter(w=>w.t>=dparse(days[0]).getTime());
+ return{fasts:fs.length,ok:fs.filter(fastOk).length,hours:hrs,avgK:kc.length?Math.round(kc.reduce((a,b)=>a+b,0)/kc.length):0,wd:ws.length>1?ws[ws.length-1].kg-ws[0].kg:null,water:days.filter(k=>waterOn(k)>=S.tgt.water).length}}
+function reportText(){const r=weekReport();return`FastTrack week\nFasts: ${r.fasts} (${r.ok} goals met)\nHours fasted: ${r1(r.hours)}\nAverage calories: ${r.avgK||'not logged'}\nWater goal days: ${r.water} of 7${r.wd!=null?`\nWeight change: ${r.wd>0?'+':''}${r1(wDisp(r.wd))} ${wUnit()}`:''}`}
